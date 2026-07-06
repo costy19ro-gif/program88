@@ -2,18 +2,20 @@ import requests
 import streamlit as st
 from datetime import datetime, timedelta
 
-BASE_URL = "https://api-sports.io"
+# CORECTARE: Mutăm conexiunea pe serverele RapidAPI unde ai cheia validă
+BASE_URL = "https://rapidapi.com"
 
 def get_headers():
-    """Prelucrează cheia API salvată în Streamlit Secrets."""
+    """Prelucrează cheia API salvată în Streamlit Secrets pentru RapidAPI."""
     if "apisports_key" not in st.secrets:
         st.error("Cheia 'apisports_key' lipsește din Streamlit Secrets!")
         return {}
     return {
-        "x-apisports-key": st.secrets["apisports_key"]
+        "x-rapidapi-key": st.secrets["apisports_key"],
+        "x-rapidapi-host": "://rapidapi.com"
     }
 
-@st.cache_data(ttl=timedelta(minutes=5))  # Scădem cache-ul la 5 minute pentru teste proaspete
+@st.cache_data(ttl=timedelta(minutes=5))
 def get_fixtures_by_date(date_str=None):
     """Aduce meciurile zilei curent formatate pentru app.py."""
     if date_str is None:
@@ -28,14 +30,12 @@ def get_fixtures_by_date(date_str=None):
         response.raise_for_status()
         data = response.json()
         
-        # Dacă API-ul returnează o eroare directă, o afișăm pe ecran
         if data.get("errors"):
             st.error(f"Eroare directă de la API-Football: {data['errors']}")
             return []
             
         raw_fixtures = data.get("response", [])
         
-        # Dacă e gol, încercăm să aducem meciurile live ca plan de rezervă
         if not raw_fixtures:
             params = {"live": "all"}
             response = requests.get(url, headers=headers, params=params, timeout=10)
@@ -43,7 +43,6 @@ def get_fixtures_by_date(date_str=None):
             raw_fixtures = data.get("response", [])
             
         if not raw_fixtures:
-            # Afișăm pe ecran detalii pentru depanare
             st.info(f"API-ul a răspuns cu succes, dar lista de meciuri transmise pentru data {date_str} este goală.")
             return []
             
@@ -107,7 +106,6 @@ def get_team_history(team_id, max_matches=20):
         for f in last_fixtures:
             full_date_str = f.get("fixture", {}).get("date", "")
             
-            # REZOLVARE: Selectăm primul element text din listă folosind [0]
             if "T" in full_date_str:
                 just_date_str = full_date_str.split("T")[0]
             else:
