@@ -82,6 +82,8 @@ def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
         meciuri_pipeline = []
         for f in raw_fixtures[-n_meciuri:]:
             full_date_str = f.get("fixture", {}).get("date", "")
+            
+            # CORECTARE: Extragem string-ul curat înainte de trimiterea în strptime
             just_date_str = full_date_str.split("T")[0] if "T" in full_date_str else full_date_str
             
             try:
@@ -116,5 +118,4 @@ def predictie_oficiala(fixture_id: int) -> dict | None:
         return None
 
 def predictii_bonus_rapidapi(params: dict | None = None) -> list[dict] | None:
-    """Modul bonus neconfigurat."""
     return None
