@@ -26,7 +26,6 @@ def get_fixtures_by_date(date_str=None):
         
     url = f"{BASE_URL}/fixtures"
     headers = get_headers()
-    
     params = {"date": date_str}
     
     try:
@@ -112,7 +111,7 @@ def get_team_history(team_id, max_matches=20):
         for f in last_fixtures:
             full_date_str = f.get("fixture", {}).get("date", "")
             
-            # CORECTARE CHIRURGICALĂ: Extragem primul element (string) din listă după split
+            # REZOLVARE CHIRURGICALĂ: Extragem strict primul element ca string curat folosind [0]
             if "T" in full_date_str:
                 just_date_str = full_date_str.split("T")[0]
             else:
