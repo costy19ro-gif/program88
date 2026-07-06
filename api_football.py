@@ -4,7 +4,6 @@ import streamlit as st
 from datetime import datetime, timedelta
 from pipeline import MeciIstoric
 
-# CONFIGURARE DIRECTĂ ȘI CORECTĂ PENTRU RAPIDAPI
 BASE_URL = "https://rapidapi.com"
 
 def get_headers():
@@ -31,7 +30,6 @@ def meciuri_azi() -> list[dict]:
         
         raw_fixtures = data.get("response", [])
         if not raw_fixtures:
-            # Plan de rezervă: dacă e gol din cauza fusului orar UTC, aducem meciurile live
             response = requests.get(url, headers=headers, params={"live": "all"}, timeout=10)
             raw_fixtures = response.json().get("response", [])
             
@@ -83,8 +81,11 @@ def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
         for f in raw_fixtures[-n_meciuri:]:
             full_date_str = f.get("fixture", {}).get("date", "")
             
-            # CORECTARE: Extragem string-ul curat înainte de trimiterea în strptime
-            just_date_str = full_date_str.split("T")[0] if "T" in full_date_str else full_date_str
+            # Ajustare stabilă string
+            if "T" in full_date_str:
+                just_date_str = full_date_str.split("T")[0]
+            else:
+                just_date_str = full_date_str
             
             try:
                 m_date = datetime.strptime(just_date_str, "%Y-%m-%d").date()
@@ -107,7 +108,6 @@ def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
 
 @st.cache_data(ttl=timedelta(hours=6))
 def predictie_oficiala(fixture_id: int) -> dict | None:
-    """Predictia proprie API-Football pentru acest meci."""
     url = f"{BASE_URL}/predictions"
     headers = get_headers()
     try:
