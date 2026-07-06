@@ -4,20 +4,20 @@ import streamlit as st
 from datetime import datetime
 from pipeline import MeciIstoric
 
-# CONEXIUNEA OFICIALĂ DIRECTĂ CONFORM DASHBOARD.API-FOOTBALL.COM
-BASE_URL = "https://api-sports.io"
+# URL-ul oficial și complet pentru clienții înregistrați prin RapidAPI
+BASE_URL = "https://rapidapi.com"
 
 def get_headers():
     if "apisports_key" not in st.secrets:
         st.error("Cheia 'apisports_key' lipsește din Streamlit Secrets!")
         return {}
     return {
-        "x-apisports-key": st.secrets["apisports_key"],
-        "x-rapidapi-host": "v3.football.api-sports.io"
+        "x-rapidapi-key": st.secrets["apisports_key"],
+        "x-rapidapi-host": "://rapidapi.com"
     }
 
 def meciuri_azi() -> list[dict]:
-    """Preia meciurile de azi direct de pe serverul api-sports.io (FĂRĂ CACHE)."""
+    """Preia meciurile de azi utilizând gateway-ul valid RapidAPI (FĂRĂ CACHE)."""
     date_str = datetime.now().strftime("%Y-%m-%d")
     url = f"{BASE_URL}/fixtures"
     headers = get_headers()
@@ -28,8 +28,8 @@ def meciuri_azi() -> list[dict]:
         response.raise_for_status()
         data = response.json()
         
-        # Dacă pe data serverului lista e goală (din cauza fusului orar UTC), aducem meciurile live
         raw_fixtures = data.get("response", [])
+        # Plan de rezervă în caz de decalaj orar UTC: extragem meciurile în desfășurare
         if not raw_fixtures:
             response = requests.get(url, headers=headers, params={"live": "all"}, timeout=10)
             raw_fixtures = response.json().get("response", [])
@@ -53,16 +53,15 @@ def meciuri_azi() -> list[dict]:
             })
         return mapped_fixtures
     except Exception as e:
-        st.error(f"Eroare directă de conexiune API-Sports: {e}")
+        st.error(f"Eroare de conexiune la serverul RapidAPI: {e}")
         return []
 
 def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
-    """Preia istoricul echipei adaptat complet pentru planul gratuit API-Sports."""
+    """Preia istoricul meciurilor fără a folosi parametrul restricționat 'last'."""
     url = f"{BASE_URL}/fixtures"
     headers = get_headers()
     current_year = datetime.now().year
     
-    # Folosim statusul FT (meciuri terminate) - NU folosim parametrul 'last' (interzis pe planul free)
     params = {"team": team_id, "season": current_year, "status": "FT"}
     
     try:
@@ -81,7 +80,12 @@ def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
         meciuri_pipeline = []
         for f in raw_fixtures[-n_meciuri:]:
             full_date_str = f.get("fixture", {}).get("date", "")
-            just_date_str = full_date_str.split("T")[0] if "T" in full_date_str else full_date_str
+            
+            # Formatare sigură string pentru conversia datei
+            if "T" in full_date_str:
+                just_date_str = full_date_str.split("T")[0]
+            else:
+                just_date_str = full_date_str
             
             try:
                 m_date = datetime.strptime(just_date_str, "%Y-%m-%d").date()
@@ -103,7 +107,6 @@ def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
         return []
 
 def predictie_oficiala(fixture_id: int) -> dict | None:
-    """Preia predicțiile oficiale interne de pe api-sports.io."""
     url = f"{BASE_URL}/predictions"
     headers = get_headers()
     try:
