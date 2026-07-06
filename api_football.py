@@ -14,7 +14,11 @@ def get_headers():
     }
 
 @st.cache_data(ttl=timedelta(hours=6))
-def get_fixtures_by_date(date_str):
+def get_fixtures_by_date(date_str=None):
+    """Aduce meciurile zilei. Dacă date_str lipsește, folosește ziua curentă."""
+    if date_str is None:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        
     url = f"{BASE_URL}/fixtures"
     headers = get_headers()
     params = {"date": date_str}
@@ -50,7 +54,7 @@ def get_fixtures_by_date(date_str):
                     "name": league_info.get("name")
                 }
             })
-        print(f"[API-Football] S-au încărcat cu succes {len(mapped_fixtures)} meciuri.")
+        print(f"[API-Football] S-au încărcat cu succes {len(mapped_fixtures)} meciuri pentru data {date_str}.")
         return mapped_fixtures
     except Exception as e:
         print(f"[API-Football] Excepție meciuri zi: {e}")
@@ -88,9 +92,13 @@ def get_team_history(team_id, max_matches=20):
         
         meciuri_pipeline = []
         for f in last_fixtures:
-            # CORECTARE: Extragere curată a datei text înainte de strptime
             full_date_str = f.get("fixture", {}).get("date", "")
-            just_date_str = full_date_str.split("T")[0] if "T" in full_date_str else full_date_str
+            
+            # CORECTARE: Păstrăm doar prima parte (YYYY-MM-DD) ca text curat din listă
+            if "T" in full_date_str:
+                just_date_str = full_date_str.split("T")[0]
+            else:
+                just_date_str = full_date_str
             
             try:
                 m_date = datetime.strptime(just_date_str, "%Y-%m-%d").date()
@@ -128,6 +136,7 @@ def get_fixture_predictions(fixture_id):
     except Exception:
         return None
 
+# Alias-uri cerute de data_source.py
 meciuri_azi = get_fixtures_by_date
 istoric_echipa = get_team_history
 predictie_oficiala = get_fixture_predictions
