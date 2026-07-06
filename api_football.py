@@ -2,14 +2,11 @@ import requests
 import streamlit as st
 from datetime import datetime, timedelta
 
-# Configurare URL de bază pentru API-Football direct (api-sports.io)
+# Configurare URL de bază pentru API-Football direct
 BASE_URL = "https://api-sports.io"
 
 def get_headers():
-    """
-    Prelucrează cheia API salvată în Streamlit Secrets.
-    Folosește header-ul oficial cerut de API-Sports.
-    """
+    """Prelucrează cheia API salvată în Streamlit Secrets."""
     if "apisports_key" not in st.secrets:
         st.error("Cheia 'apisports_key' lipsește din Streamlit Secrets!")
         return {}
@@ -20,9 +17,7 @@ def get_headers():
 
 @st.cache_data(ttl=timedelta(hours=6))
 def get_fixtures_by_date(date_str):
-    """
-    Prelucrează meciurile dintr-o anumită zi (Format: YYYY-MM-DD).
-    """
+    """Meciurile zilei mapate exact pe structura cerută de app.py."""
     url = f"{BASE_URL}/fixtures"
     headers = get_headers()
     params = {"date": date_str}
@@ -33,32 +28,50 @@ def get_fixtures_by_date(date_str):
         data = response.json()
         
         if data.get("errors"):
-            st.error(f"Eroare API-Football: {data['errors']}")
             return []
             
-        return data.get("response", [])
-    except Exception as e:
-        st.error(f"Eroare la conexiunea cu API-Football: {e}")
+        raw_fixtures = data.get("response", [])
+        mapped_fixtures = []
+        
+        for f in raw_fixtures:
+            fixture_info = f.get("fixture", {})
+            league_info = f.get("league", {})
+            teams_info = f.get("teams", {})
+            
+            # Mapare directă pe cheile folosite de app.py
+            mapped_fixtures.append({
+                "fixture_id": fixture_info.get("id"),
+                "homeTeam": {
+                    "id": teams_info.get("home", {}).get("id"),
+                    "name": teams_info.get("home", {}).get("name")
+                },
+                "awayTeam": {
+                    "id": teams_info.get("away", {}).get("id"),
+                    "name": teams_info.get("away", {}).get("name")
+                },
+                "tournament": {
+                    "name": league_info.get("name")
+                }
+            })
+        return mapped_fixtures
+    except Exception:
         return []
 
 @st.cache_data(ttl=timedelta(hours=6))
 def get_team_history(team_id, max_matches=20):
     """
-    Prelucrează istoricul meciurilor terminate ale unei echipe.
-    MODIFICAT PENTRU PLANUL FREE: Nu mai folosește parametrul 'last' (care dă eroare).
-    Descarcă meciurile din sezonul curent și păstrează ultimele N meciuri direct în Python.
+    Istoricul meciurilor adaptat pentru planul gratuit.
+    Convertește datele brute direct în obiecte MeciIstoric necesare pipeline.py
     """
+    from pipeline import MeciIstoric
     url = f"{BASE_URL}/fixtures"
     headers = get_headers()
-    
-    # Determinăm automat anul sezonului curent (folosim 2026 conform mediului curent)
     current_year = datetime.now().year
     
-    # Parametri curați, acceptați de planul gratuit
     params = {
         "team": team_id,
         "season": current_year,
-        "status": "FT"  # Doar meciurile încheiate la timp regulamentar (Full Time)
+        "status": "FT"
     }
     
     try:
@@ -66,37 +79,47 @@ def get_team_history(team_id, max_matches=20):
         response.raise_for_status()
         data = response.json()
         
-        # Verificăm dacă structura de erori a API-ului a returnat ceva
-        if data.get("errors"):
-            # Dacă sezonul curent nu a început încă sau e gol, încercăm o repliere pe anul trecut
-            if "not access" in str(data["errors"]) or not data.get("response"):
-                params["season"] = current_year - 1
-                response = requests.get(url, headers=headers, params=params, timeout=10)
-                data = response.json()
-            else:
-                st.error(f"Eroare API-Football: {data['errors']}")
-                return []
-        
-        fixtures = data.get("response", [])
-        
-        if not fixtures:
+        # Repliere pe sezonul anterior dacă cel curent nu are meciuri jucate
+        if data.get("errors") or not data.get("response"):
+            params["season"] = current_year - 1
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            data = response.json()
+            
+        raw_fixtures = data.get("response", [])
+        if not raw_fixtures:
             return []
             
-        # Sortăm meciurile după dată, cronologic (de la cel mai vechi la cel mai recent)
-        fixtures.sort(key=lambda x: x.get("fixture", {}).get("date", ""))
+        # Sortăm cronologic
+        raw_fixtures.sort(key=lambda x: x.get("fixture", {}).get("date", ""))
+        last_fixtures = raw_fixtures[-max_matches:]
         
-        # Extragem doar ultimele N meciuri (implicit 20) direct în Python
-        return fixtures[-max_matches:]
-        
-    except Exception as e:
-        st.error(f"Eroare la descărcarea istoricului echipei: {e}")
+        meciuri_pipeline = []
+        for f in last_fixtures:
+            f_date_str = f.get("fixture", {}).get("date", "").split("T")[0]
+            try:
+                m_date = datetime.strptime(f_date_str, "%Y-%m-%d").date()
+            except ValueError:
+                m_date = datetime.today().date()
+                
+            teams = f.get("teams", {})
+            goals = f.get("goals", {})
+            
+            # Construim obiectul strict pe care pipeline.py îl folosește în calculele Poisson
+            meciuri_pipeline.append(MeciIstoric(
+                data=m_date,
+                home_id=teams.get("home", {}).get("id"),
+                away_id=teams.get("away", {}).get("id"),
+                home_goals=goals.get("home", 0) if goals.get("home") is not None else 0,
+                away_goals=goals.get("away", 0) if goals.get("away") is not None else 0
+            ))
+            
+        return meciuri_pipeline
+    except Exception:
         return []
 
 @st.cache_data(ttl=timedelta(hours=6))
 def get_fixture_predictions(fixture_id):
-    """
-    Prelucrează predicțiile interne generate direct de API-Football pentru un mci (Modul Bonus).
-    """
+    """Prelucrează predicțiile interne brute."""
     url = f"{BASE_URL}/predictions"
     headers = get_headers()
     params = {"fixture": fixture_id}
@@ -106,16 +129,13 @@ def get_fixture_predictions(fixture_id):
         response.raise_for_status()
         data = response.json()
         
-        if data.get("errors"):
-            return None
-            
         res_list = data.get("response", [])
-        return res_list if res_list else None
+        return res_list[0] if res_list else None
     except Exception:
         return None
 
 # ──────────────────────────────────────────────────────────────────────────
-# ALIAS-URI EXACTE PENTRU COMPATIBILITATE DIRECTĂ CU data_source.py
+# ALIAS-URI PENTRU COMPATIBILITATE DIRECTĂ CU data_source.py
 # ──────────────────────────────────────────────────────────────────────────
 meciuri_azi = get_fixtures_by_date
 istoric_echipa = get_team_history
