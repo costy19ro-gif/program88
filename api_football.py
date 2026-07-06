@@ -2,11 +2,11 @@ import requests
 import streamlit as st
 from datetime import datetime, timedelta
 
-# CORECTARE: Mutăm conexiunea pe serverele RapidAPI unde ai cheia validă
+# ADRESA COMPLETĂ ȘI CORECTĂ PENTRU RAPIDAPI
 BASE_URL = "https://rapidapi.com"
 
 def get_headers():
-    """Prelucrează cheia API salvată în Streamlit Secrets pentru RapidAPI."""
+    """Prelucrează cheia API salvată în Streamlit Secrets pentru interfața RapidAPI."""
     if "apisports_key" not in st.secrets:
         st.error("Cheia 'apisports_key' lipsește din Streamlit Secrets!")
         return {}
@@ -36,6 +36,7 @@ def get_fixtures_by_date(date_str=None):
             
         raw_fixtures = data.get("response", [])
         
+        # Dacă e gol pe data curentă, cerem meciurile live ca metodă de rezervă
         if not raw_fixtures:
             params = {"live": "all"}
             response = requests.get(url, headers=headers, params=params, timeout=10)
