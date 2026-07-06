@@ -1,12 +1,13 @@
+from __future__ import annotations
 import requests
 import streamlit as st
 from datetime import datetime, timedelta
+from pipeline import MeciIstoric
 
-# ADRESA COMPLETĂ ȘI CORECTĂ PENTRU RAPIDAPI
+# CONFIGURARE DIRECTĂ ȘI CORECTĂ PENTRU RAPIDAPI
 BASE_URL = "https://rapidapi.com"
 
 def get_headers():
-    """Prelucrează cheia API salvată în Streamlit Secrets pentru interfața RapidAPI."""
     if "apisports_key" not in st.secrets:
         st.error("Cheia 'apisports_key' lipsește din Streamlit Secrets!")
         return {}
@@ -16,11 +17,9 @@ def get_headers():
     }
 
 @st.cache_data(ttl=timedelta(minutes=5))
-def get_fixtures_by_date(date_str=None):
-    """Aduce meciurile zilei curent formatate pentru app.py."""
-    if date_str is None:
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        
+def meciuri_azi() -> list[dict]:
+    """Meciurile programate azi (Sursa directă: RapidAPI)."""
+    date_str = datetime.now().strftime("%Y-%m-%d")
     url = f"{BASE_URL}/fixtures"
     headers = get_headers()
     params = {"date": date_str}
@@ -30,31 +29,17 @@ def get_fixtures_by_date(date_str=None):
         response.raise_for_status()
         data = response.json()
         
-        if data.get("errors"):
-            st.error(f"Eroare directă de la API-Football: {data['errors']}")
-            return []
-            
         raw_fixtures = data.get("response", [])
-        
-        # Dacă e gol pe data curentă, cerem meciurile live ca metodă de rezervă
         if not raw_fixtures:
-            params = {"live": "all"}
-            response = requests.get(url, headers=headers, params=params, timeout=10)
-            data = response.json()
-            raw_fixtures = data.get("response", [])
-            
-        if not raw_fixtures:
-            st.info(f"API-ul a răspuns cu succes, dar lista de meciuri transmise pentru data {date_str} este goală.")
-            return []
+            # Plan de rezervă: dacă e gol din cauza fusului orar UTC, aducem meciurile live
+            response = requests.get(url, headers=headers, params={"live": "all"}, timeout=10)
+            raw_fixtures = response.json().get("response", [])
             
         mapped_fixtures = []
         for f in raw_fixtures:
-            fixture_info = f.get("fixture", {})
-            league_info = f.get("league", {})
             teams_info = f.get("teams", {})
-            
             mapped_fixtures.append({
-                "fixture_id": fixture_info.get("id"),
+                "fixture_id": f.get("fixture", {}).get("id"),
                 "homeTeam": {
                     "id": teams_info.get("home", {}).get("id"),
                     "name": teams_info.get("home", {}).get("name")
@@ -64,53 +49,40 @@ def get_fixtures_by_date(date_str=None):
                     "name": teams_info.get("away", {}).get("name")
                 },
                 "tournament": {
-                    "name": league_info.get("name")
+                    "name": f.get("league", {}).get("name")
                 }
             })
         return mapped_fixtures
     except Exception as e:
-        st.error(f"Excepție întâmpinată în api_football.py: {e}")
+        st.error(f"Eroare rețea la încărcarea meciurilor: {e}")
         return []
 
 @st.cache_data(ttl=timedelta(hours=6))
-def get_team_history(team_id, max_matches=20):
-    """Ultimele meciuri terminate convertite în obiecte MeciIstoric."""
-    from pipeline import MeciIstoric
+def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
+    """Ultimele n_meciuri TERMINATE ale unei echipe (Sursa directă: RapidAPI)."""
     url = f"{BASE_URL}/fixtures"
     headers = get_headers()
     current_year = datetime.now().year
     
-    params = {
-        "team": team_id,
-        "season": current_year,
-        "status": "FT"
-    }
+    params = {"team": team_id, "season": current_year, "status": "FT"}
     
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
         
-        if data.get("errors") or not data.get("response"):
+        if not data.get("response"):
             params["season"] = current_year - 1
             response = requests.get(url, headers=headers, params=params, timeout=10)
             data = response.json()
             
         raw_fixtures = data.get("response", [])
-        if not raw_fixtures:
-            return []
-            
         raw_fixtures.sort(key=lambda x: x.get("fixture", {}).get("date", ""))
-        last_fixtures = raw_fixtures[-max_matches:]
         
         meciuri_pipeline = []
-        for f in last_fixtures:
+        for f in raw_fixtures[-n_meciuri:]:
             full_date_str = f.get("fixture", {}).get("date", "")
-            
-            if "T" in full_date_str:
-                just_date_str = full_date_str.split("T")[0]
-            else:
-                just_date_str = full_date_str
+            just_date_str = full_date_str.split("T")[0] if "T" in full_date_str else full_date_str
             
             try:
                 m_date = datetime.strptime(just_date_str, "%Y-%m-%d").date()
@@ -127,26 +99,22 @@ def get_team_history(team_id, max_matches=20):
                 home_goals=goals.get("home", 0) if goals.get("home") is not None else 0,
                 away_goals=goals.get("away", 0) if goals.get("away") is not None else 0
             ))
-            
         return meciuri_pipeline
-    except Exception as e:
+    except Exception:
         return []
 
 @st.cache_data(ttl=timedelta(hours=6))
-def get_fixture_predictions(fixture_id):
+def predictie_oficiala(fixture_id: int) -> dict | None:
+    """Predictia proprie API-Football pentru acest meci."""
     url = f"{BASE_URL}/predictions"
     headers = get_headers()
-    params = {"fixture": fixture_id}
-    
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        res_list = data.get("response", [])
+        response = requests.get(url, headers=headers, params={"fixture": fixture_id}, timeout=10)
+        res_list = response.json().get("response", [])
         return res_list if res_list else None
     except Exception:
         return None
 
-meciuri_azi = get_fixtures_by_date
-istoric_echipa = get_team_history
-predictie_oficiala = get_fixture_predictions
+def predictii_bonus_rapidapi(params: dict | None = None) -> list[dict] | None:
+    """Modul bonus neconfigurat."""
+    return None
