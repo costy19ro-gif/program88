@@ -3,7 +3,7 @@ import streamlit as st
 from datetime import datetime, timedelta
 
 # Configurare URL de bază pentru API-Football direct (api-sports.io)
-BASE_URL = "https://v3.football.api-sports.io"
+BASE_URL = "https://api-sports.io"
 
 def get_headers():
     """
@@ -95,7 +95,7 @@ def get_team_history(team_id, max_matches=20):
 @st.cache_data(ttl=timedelta(hours=6))
 def get_fixture_predictions(fixture_id):
     """
-    Prelucrează predicțiile interne generate direct de API-Football pentru un meci (Modul Bonus).
+    Prelucrează predicțiile interne generate direct de API-Football pentru un mci (Modul Bonus).
     """
     url = f"{BASE_URL}/predictions"
     headers = get_headers()
@@ -110,9 +110,13 @@ def get_fixture_predictions(fixture_id):
             return None
             
         res_list = data.get("response", [])
-        return res_list[0] if res_list else None
+        return res_list if res_list else None
     except Exception:
         return None
-# Scurtături pentru compatibilitate cu restul aplicației tale:
+
+# ──────────────────────────────────────────────────────────────────────────
+# ALIAS-URI EXACTE PENTRU COMPATIBILITATE DIRECTĂ CU data_source.py
+# ──────────────────────────────────────────────────────────────────────────
 meciuri_azi = get_fixtures_by_date
 istoric_echipa = get_team_history
+predictie_oficiala = get_fixture_predictions
