@@ -15,7 +15,7 @@ def get_headers():
         "x-rapidapi-host": "v3.football.api-sports.io"
     }
 
-@st.cache_data(ttl=timedelta(minutes=15))  # Refresh la 15 minute pentru a prinde meciurile noi proaspete
+@st.cache_data(ttl=timedelta(minutes=15))
 def get_fixtures_by_date(date_str=None):
     """
     Aduce meciurile relevante. Pentru a evita problemele de fus orar (UTC vs local),
@@ -27,7 +27,6 @@ def get_fixtures_by_date(date_str=None):
     url = f"{BASE_URL}/fixtures"
     headers = get_headers()
     
-    # Încercăm prima dată interogarea canonică pe data curentă
     params = {"date": date_str}
     
     try:
@@ -36,7 +35,7 @@ def get_fixtures_by_date(date_str=None):
         data = response.json()
         raw_fixtures = data.get("response", [])
         
-        # REPLIERE INTELIGENTĂ: Dacă pe data locală e gol din cauza UTC-ului, cerem meciurile live/în desfășurare pentru a popula ecranul
+        # REPLIERE INTELIGENTĂ: Dacă pe data locală e gol din cauza UTC-ului, cerem meciurile live
         if not raw_fixtures:
             print("[API-Football] Data fixă e goală din cauza fusului orar. Extrag meciurile live...")
             params = {"live": "all"}
@@ -54,7 +53,6 @@ def get_fixtures_by_date(date_str=None):
             league_info = f.get("league", {})
             teams_info = f.get("teams", {})
             
-            # Mapare directă pe cheile specifice folosite de app.py
             mapped_fixtures.append({
                 "fixture_id": fixture_info.get("id"),
                 "homeTeam": {
@@ -98,7 +96,6 @@ def get_team_history(team_id, max_matches=20):
         response.raise_for_status()
         data = response.json()
         
-        # Repliere pe sezonul anterior dacă cel curent nu are meciuri suficiente jucate
         if data.get("errors") or not data.get("response"):
             params["season"] = current_year - 1
             response = requests.get(url, headers=headers, params=params, timeout=10)
@@ -108,7 +105,6 @@ def get_team_history(team_id, max_matches=20):
         if not raw_fixtures:
             return []
             
-        # Sortăm cronologic de la cel mai vechi la cel mai recent
         raw_fixtures.sort(key=lambda x: x.get("fixture", {}).get("date", ""))
         last_fixtures = raw_fixtures[-max_matches:]
         
@@ -116,7 +112,7 @@ def get_team_history(team_id, max_matches=20):
         for f in last_fixtures:
             full_date_str = f.get("fixture", {}).get("date", "")
             
-            # Păstrăm doar prima parte (YYYY-MM-DD) ca text curat din dată
+            # CORECTARE CHIRURGICALĂ: Extragem primul element (string) din listă după split
             if "T" in full_date_str:
                 just_date_str = full_date_str.split("T")[0]
             else:
