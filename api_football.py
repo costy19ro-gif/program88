@@ -113,3 +113,6 @@ def get_fixture_predictions(fixture_id):
         return res_list[0] if res_list else None
     except Exception:
         return None
+# Scurtături pentru compatibilitate cu restul aplicației tale:
+meciuri_azi = get_fixtures_by_date
+istoric_echipa = get_team_history
