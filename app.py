@@ -7,17 +7,6 @@ simulate) pe baza istoricului real de meciuri, tras dintr-un API.
 
 import streamlit as st
 import datetime
-
-# Adaugă în sidebar un selector de dată
-st.sidebar.header("Selectează Data")
-data_selectata = st.sidebar.date_input("Alege ziua meciurilor", datetime.date(2026, 6, 26))
-
-# Convertește data în formatul cerut de API (YYYY-MM-DD)
-data_str = data_selectata.strftime("%Y-%m-%d")
-
-# Transmite data_str mai departe către funcția din data_source care aduce meciurile
-# Exemplu: meciuri = data_source.get_matches_by_date(data_str)
-
 from pipeline import analizeaza_meci
 import data_source as ds
 
@@ -26,9 +15,14 @@ st.title("📊 Miliardarul — Decay + Shrinkage + Dixon-Coles")
 st.caption("Date reale, pipeline statistic complet — nu simulare bazata pe hash")
 
 # ---------------------------------------------------------------------------
-# Sidebar — parametrii pipeline-ului (aceiasi pe care i-am ales impreuna in Excel)
+# Sidebar — Selector de Dată și Parametrii pipeline-ului
 # ---------------------------------------------------------------------------
 with st.sidebar:
+    st.header("📅 Configurare Dată")
+    # Selectorul de dată - pornește implicit pe 26 iunie 2026 unde avem meciuri salvate
+    data_selectata = st.date_input("Alege ziua meciurilor", datetime.date(2026, 6, 26))
+    data_str = data_selectata.strftime("%Y-%m-%d")
+
     st.header("⚙️ Parametrii pipeline-ului")
     half_life = st.slider("Half-life decay (zile)", 15, 90, 30, step=5)
     k_shrinkage = st.slider("k Shrinkage Bayesian", 5, 20, 10)
@@ -39,11 +33,12 @@ with st.sidebar:
 st.markdown("---")
 
 # ---------------------------------------------------------------------------
-# Selectorul de meci — tras din API, nu din lista statica hash-uita
+# Selectorul de meci — încarcă din API din ziua aleasă în calendar
 # ---------------------------------------------------------------------------
 try:
-    with st.spinner("Se încarcă meciurile de azi..."):
-        meciuri_azi = ds.meciuri_azi()
+    with st.spinner(f"Se încarcă meciurile pentru data de {data_str}..."):
+        # Transmitem data_str ca parametru pentru a nu rămâne blocați pe ziua de azi
+        meciuri_azi = ds.meciuri_azi(data_str)
 except Exception as e:
     st.error(f"Nu am putut încărca meciurile din API: {e}")
     st.info(
@@ -53,7 +48,7 @@ except Exception as e:
     st.stop()
 
 if not meciuri_azi:
-    st.warning("Nu am găsit meciuri pentru azi.")
+    st.warning(f"Nu am găsit meciuri pentru data de {data_str}. Schimbă data din meniul lateral.")
     st.stop()
 
 optiuni = {
@@ -99,13 +94,13 @@ if st.button("🔄 Analizează (rulează pipeline-ul complet)", type="primary"):
 
     rezultat = analizeaza_meci(
         istoric_gazde, istoric_oaspeti,
-        data_referinta=date.today(),
+        data_referinta=data_selectata,  # Corectat: calculăm decay-ul raportat la ziua meciului
         half_life_zile=half_life,
         k_shrinkage=k_shrinkage,
         rho=rho,
     )
 
-    st.session_state["rezultat"] = rezultat
+    st.session_state["rezultat"] = resultado = rezultat
     st.session_state["nume_echipe"] = (gazde_nume, oaspeti_nume)
     st.session_state["fixture_id"] = fixture_id
 
@@ -153,7 +148,7 @@ if "rezultat" in st.session_state:
     )
 
     # -----------------------------------------------------------------------
-    # Sectiune BONUS — comparatie cu predictii externe (nu inlocuieste pipeline-ul)
+    # Sectiune BONUS — comparatie cu predictii externe
     # -----------------------------------------------------------------------
     st.markdown("---")
     st.subheader("🔍 Comparație cu predicții externe (bonus)")
