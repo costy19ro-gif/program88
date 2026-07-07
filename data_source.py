@@ -62,40 +62,39 @@ def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
     url = f"{BASE_URL}/fixtures"
     headers = get_headers()
     current_year = datetime.now().year
-    
+
     params = {"team": team_id, "season": current_year, "status": "FT"}
-    
+
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
-        
+
         if not data.get("response"):
             params["season"] = current_year - 1
             response = requests.get(url, headers=headers, params=params, timeout=10)
             data = response.json()
-            
+
         raw_fixtures = data.get("response", [])
         raw_fixtures.sort(key=lambda x: x.get("fixture", {}).get("date", ""))
-        
+
         meciuri_pipeline = []
         for f in raw_fixtures[-n_meciuri:]:
             full_date_str = f.get("fixture", {}).get("date", "")
-            
-            # Formatare sigură string pentru conversia datei
-        if "T" in full_date_str:
-            just_date_str = full_date_str.split("T")[0]  # <-- CORECT: Extrage doar primul element ("2026-07-07")
-        else:
-            just_date_str = full_date_str
-            
+
+            if "T" in full_date_str:
+                just_date_str = full_date_str.split("T")[0]
+            else:
+                just_date_str = full_date_str
+
             try:
                 m_date = datetime.strptime(just_date_str, "%Y-%m-%d").date()
             except Exception:
                 m_date = datetime.today().date()
-                
+
             teams = f.get("teams", {})
             goals = f.get("goals", {})
-            
+
             meciuri_pipeline.append(MeciIstoric(
                 data=m_date,
                 home_id=teams.get("home", {}).get("id"),
@@ -103,9 +102,13 @@ def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
                 home_goals=goals.get("home", 0) if goals.get("home") is not None else 0,
                 away_goals=goals.get("away", 0) if goals.get("away") is not None else 0
             ))
+
         return meciuri_pipeline
-    except Exception:
+
+    except Exception as e:
+        st.error(f"Eroare la preluarea istoricului echipei: {e}")
         return []
+
 
 def predictie_oficiala(fixture_id: int) -> dict | None:
     url = f"{BASE_URL}/predictions"
