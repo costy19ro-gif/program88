@@ -8,7 +8,7 @@ from pipeline import MeciIstoric
 BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
 
 def get_headers():
-    """Header-ele necesare pentru RapidAPI."""
+    """Header-ele necesare pentru API-FOOTBALL via RapidAPI."""
     if "apisports_key" not in st.secrets:
         st.error("Cheia 'apisports_key' lipsește din Streamlit Secrets!")
         return {}
