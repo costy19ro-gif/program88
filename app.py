@@ -5,8 +5,18 @@ Aplicatie Streamlit care ruleaza pipeline-ul statistic REAL (nu date
 simulate) pe baza istoricului real de meciuri, tras dintr-un API.
 """
 
-from datetime import date
 import streamlit as st
+import datetime
+
+# Adaugă în sidebar un selector de dată
+st.sidebar.header("Selectează Data")
+data_selectata = st.sidebar.date_input("Alege ziua meciurilor", datetime.date(2026, 6, 26))
+
+# Convertește data în formatul cerut de API (YYYY-MM-DD)
+data_str = data_selectata.strftime("%Y-%m-%d")
+
+# Transmite data_str mai departe către funcția din data_source care aduce meciurile
+# Exemplu: meciuri = data_source.get_matches_by_date(data_str)
 
 from pipeline import analizeaza_meci
 import data_source as ds
