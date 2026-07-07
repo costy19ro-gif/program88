@@ -82,10 +82,10 @@ def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
             full_date_str = f.get("fixture", {}).get("date", "")
             
             # Formatare sigură string pentru conversia datei
-            if "T" in full_date_str:
-                just_date_str = full_date_str.split("T")[0]
-            else:
-                just_date_str = full_date_str
+        if "T" in full_date_str:
+            just_date_str = full_date_str.split("T")[0]  # <-- CORECT: Extrage doar primul element ("2026-07-07")
+        else:
+            just_date_str = full_date_str
             
             try:
                 m_date = datetime.strptime(just_date_str, "%Y-%m-%d").date()
