@@ -1,133 +1,51 @@
-from __future__ import annotations
-import requests
-import streamlit as st
-from datetime import datetime
-from pipeline import MeciIstoric
+"""
+data_source.py
+==============
+Strat de orchestrare care face legatura intre interfata (app.py) 
+si clientii de retea (api_football.py si rapidapi_predictions.py).
+"""
 
-# URL-ul oficial și complet pentru clienții înregistrați prin RapidAPI
-import requests
+import api_football
+import rapidapi_predictions
 
-# URL-ul corect pentru conexiunea directa prin api-sports / api-football dashboard
-BASE_URL = "https://v3.football.api-sports.io"
-
-headers = {
-    "x-apisports-key": "AICI_PUI_CHEIA_COPIATA_DIN_DASHBOARD"
-}
-
-# Exemplu de apel pentru meciurile din data respectivă
-response = requests.get(f"{BASE_URL}/fixtures", headers=headers, params={"date": "2026-07-07"})
-
-def get_headers():
-    """Header-ele necesare pentru API-FOOTBALL via RapidAPI."""
-    if "apisports_key" not in st.secrets:
-        st.error("Cheia 'apisports_key' lipsește din Streamlit Secrets!")
-        return {}
-    return {
-        "x-rapidapi-key": st.secrets["apisports_key"],
-        "x-rapidapi-host": "api-football-v1.p.rapidapi.com"
-    }
-def meciuri_azi() -> list[dict]:
-    """Preia meciurile de azi utilizând gateway-ul valid RapidAPI (FĂRĂ CACHE)."""
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    url = f"{BASE_URL}/fixtures"
-    headers = get_headers()
-    params = {"date": date_str}
-    
+def meciuri_azi(date_str=None):
+    """
+    Prelucreaza si returneaza meciurile programate pentru o anumita data.
+    Daca nu se specifica nicio data, se poate folosi o valoare implicita in api_football.
+    """
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        raw_fixtures = data.get("response", [])
-        # Plan de rezervă în caz de decalaj orar UTC: extragem meciurile în desfășurare
-        if not raw_fixtures:
-            response = requests.get(url, headers=headers, params={"live": "all"}, timeout=10)
-            raw_fixtures = response.json().get("response", [])
-            
-        mapped_fixtures = []
-        for f in raw_fixtures:
-            teams_info = f.get("teams", {})
-            mapped_fixtures.append({
-                "fixture_id": f.get("fixture", {}).get("id"),
-                "homeTeam": {
-                    "id": teams_info.get("home", {}).get("id"),
-                    "name": teams_info.get("home", {}).get("name")
-                },
-                "awayTeam": {
-                    "id": teams_info.get("away", {}).get("id"),
-                    "name": teams_info.get("away", {}).get("name")
-                },
-                "tournament": {
-                    "name": f.get("league", {}).get("name")
-                }
-            })
-        return mapped_fixtures
+        # Trimite parametrul date_str mai departe catre clientul principal API-Football
+        return api_football.get_fixtures(date_str)
     except Exception as e:
-        st.error(f"Eroare de conexiune la serverul RapidAPI: {e}")
+        print(f"[data_source] Eroare la preluarea meciurilor: {e}")
         return []
 
-def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
-    """Preia istoricul meciurilor fără a folosi parametrul restricționat 'last'."""
-    url = f"{BASE_URL}/fixtures"
-    headers = get_headers()
-    current_year = datetime.now().year
-
-    params = {"team": team_id, "season": current_year, "status": "FT"}
-
+def istoric_echipa(team_id, n_meciuri=20):
+    """
+    Aduce ultimele n meciuri terminate ale unei echipe.
+    """
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-
-        if not data.get("response"):
-            params["season"] = current_year - 1
-            response = requests.get(url, headers=headers, params=params, timeout=10)
-            data = response.json()
-
-        raw_fixtures = data.get("response", [])
-        raw_fixtures.sort(key=lambda x: x.get("fixture", {}).get("date", ""))
-
-        meciuri_pipeline = []
-        for f in raw_fixtures[-n_meciuri:]:
-            full_date_str = f.get("fixture", {}).get("date", "")
-
-            if "T" in full_date_str:
-                just_date_str = full_date_str.split("T")[0]
-            else:
-                just_date_str = full_date_str
-
-            try:
-                m_date = datetime.strptime(just_date_str, "%Y-%m-%d").date()
-            except Exception:
-                m_date = datetime.today().date()
-
-            teams = f.get("teams", {})
-            goals = f.get("goals", {})
-
-            meciuri_pipeline.append(MeciIstoric(
-                data=m_date,
-                home_id=teams.get("home", {}).get("id"),
-                away_id=teams.get("away", {}).get("id"),
-                home_goals=goals.get("home", 0) if goals.get("home") is not None else 0,
-                away_goals=goals.get("away", 0) if goals.get("away") is not None else 0
-            ))
-
-        return meciuri_pipeline
-
+        return api_football.get_team_history(team_id, n_meciuri)
     except Exception as e:
-        st.error(f"Eroare la preluarea istoricului echipei: {e}")
-        return 
+        print(f"[data_source] Eroare la preluarea istoricului pentru echipa {team_id}: {e}")
+        return []
 
-
-def predictie_oficiala(fixture_id: int) -> dict | None:
-    url = f"{BASE_URL}/predictions"
-    headers = get_headers()
+def predictie_oficiala(fixture_id):
+    """
+    Aduce predictia nativa generata direct de API-Football (Bonus).
+    """
     try:
-        response = requests.get(url, headers=headers, params={"fixture": fixture_id}, timeout=10)
-        res_list = response.json().get("response", [])
-        return res_list if res_list else None
-    except Exception:
+        return api_football.get_predictions(fixture_id)
+    except Exception as e:
+        print(f"[data_source] Eroare la preluarea predictiei oficiale {fixture_id}: {e}")
         return None
 
-def predictii_bonus_rapidapi(params: dict | None = None) -> list[dict] | None:
-    return None
+def predictii_bonus_rapidapi():
+    """
+    Modul optional pentru predictiile tipstar din platforma externa RapidAPI.
+    """
+    try:
+        return rapidapi_predictions.get_bonus_predictions()
+    except Exception as e:
+        print(f"[data_source] Modulul bonus RapidAPI nu este configurat complet: {e}")
+        return None
