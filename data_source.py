@@ -5,7 +5,17 @@ from datetime import datetime
 from pipeline import MeciIstoric
 
 # URL-ul oficial și complet pentru clienții înregistrați prin RapidAPI
-BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
+import requests
+
+# URL-ul corect pentru conexiunea directa prin api-sports / api-football dashboard
+BASE_URL = "https://v3.football.api-sports.io"
+
+headers = {
+    "x-apisports-key": "AICI_PUI_CHEIA_COPIATA_DIN_DASHBOARD"
+}
+
+# Exemplu de apel pentru meciurile din data respectivă
+response = requests.get(f"{BASE_URL}/fixtures", headers=headers, params={"date": "2026-07-07"})
 
 def get_headers():
     """Header-ele necesare pentru API-FOOTBALL via RapidAPI."""
