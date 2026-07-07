@@ -5,7 +5,8 @@ from datetime import datetime
 from pipeline import MeciIstoric
 
 # URL-ul oficial și complet pentru clienții înregistrați prin RapidAPI
-BASE_URL = "https://rapidapi.com"
+BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
+"x-rapidapi-host": "api-football-v1.p.rapidapi.com"
 
 def get_headers():
     if "apisports_key" not in st.secrets:
