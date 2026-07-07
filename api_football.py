@@ -1,149 +1,118 @@
+from __future__ import annotations
 import requests
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime
+from pipeline import MeciIstoric
 
-# ADRESA CORECTĂ PENTRU API-FOOTBALL VIA RAPIDAPI
-BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
+BASE_URL = "https://sportapi7.p.rapidapi.com"
 
 def get_headers():
-    """Prelucrează cheia API salvată în Streamlit Secrets pentru interfața RapidAPI."""
-    if "apisports_key" not in st.secrets:
-        st.error("Cheia 'apisports_key' lipsește din Streamlit Secrets!")
-        return {}
+    """Header-ele necesare pentru autentificarea SportAPI7 via RapidAPI."""
     return {
-        "x-rapidapi-key": st.secrets["apisports_key"],
-        "x-rapidapi-host": "api-football-v1.p.rapidapi.com"
+        "X-RapidAPI-Key": "41b44ba4afmshbebf0e0637fc807p12bf84jsn0471b6bfcfea",
+        "X-RapidAPI-Host": "sportapi7.p.rapidapi.com"
     }
 
-@st.cache_data(ttl=timedelta(minutes=5))
-def get_fixtures_by_date(date_str=None):
-    if date_str is None:
+def meciuri_azi(date_str: str = None) -> list[dict]:
+    """Preia toate meciurile de fotbal dintr-o anumită zi folosind SportAPI7."""
+    if not date_str:
         date_str = datetime.now().strftime("%Y-%m-%d")
         
-    url = f"{BASE_URL}/fixtures"
     headers = get_headers()
-    params = {"date": date_str}
+    timezone_offset = 0 # UTC 
     
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        # Pasul 1: Preluăm categoriile de fotbal din acea zi
+        cat_url = f"{BASE_URL}/api/v1/sport/football/{date_str}/{timezone_offset}/categories"
+        cat_resp = requests.get(cat_url, headers=headers, timeout=10)
+        categories_data = cat_resp.json()
         
-        if data.get("errors"):
-            st.error(f"Eroare directă de la API-Football: {data['errors']}")
-            return []
-            
-        raw_fixtures = data.get("response", [])
-        
-        if not raw_fixtures:
-            params = {"live": "all"}
-            response = requests.get(url, headers=headers, params=params, timeout=10)
-            data = response.json()
-            raw_fixtures = data.get("response", [])
-            
-        if not raw_fixtures:
-            st.info(f"API-ul a răspuns cu succes, dar lista de meciuri pentru data {date_str} este goală.")
-            return []
-            
         mapped_fixtures = []
-        for f in raw_fixtures:
-            fixture_info = f.get("fixture", {})
-            league_info = f.get("league", {})
-            teams_info = f.get("teams", {})
+        categories = categories_data.get("categories", [])
+        
+        if not categories or not isinstance(categories, list):
+            return []
             
-            mapped_fixtures.append({
-                "fixture_id": fixture_info.get("id"),
-                "homeTeam": {
-                    "id": teams_info.get("home", {}).get("id"),
-                    "name": teams_info.get("home", {}).get("name")
-                },
-                "awayTeam": {
-                    "id": teams_info.get("away", {}).get("id"),
-                    "name": teams_info.get("away", {}).get("name")
-                },
-                "tournament": {
-                    "name": league_info.get("name")
-                }
-            })
+        # Pasul 2: Parcurgem primele 5 categorii active (pentru a evita blocarea pe planul gratuit)
+        for cat in categories[:5]:
+            cat_id = cat["category"]["id"]
+            events_url = f"{BASE_URL}/api/v1/category/{cat_id}/scheduled-events/{date_str}"
+            events_resp = requests.get(events_url, headers=headers, timeout=10)
+            events_data = events_resp.json()
+            
+            for event in events_data.get("events", []):
+                # Protecție împotriva erorilor de structură (precum KeyError-ul raportat)
+                tournament_info = event.get("tournament", {})
+                unique_t = tournament_info.get("uniqueTournament", {})
+                tournament_id = unique_t.get("id") if unique_t else tournament_info.get("id")
+                
+                mapped_fixtures.append({
+                    "fixture_id": event.get("id"),
+                    "homeTeam": {
+                        "id": event.get("homeTeam", {}).get("id"),
+                        "name": event.get("homeTeam", {}).get("name")
+                    },
+                    "awayTeam": {
+                        "id": event.get("awayTeam", {}).get("id"),
+                        "name": event.get("awayTeam", {}).get("name")
+                    },
+                    "tournament": {
+                        "name": tournament_info.get("name", "Unknown Tournament"),
+                        "id": tournament_id,
+                        "season_id": event.get("season", {}).get("id")
+                    }
+                })
         return mapped_fixtures
     except Exception as e:
-        st.error(f"Excepție întâmpinată în api_football.py: {e}")
+        st.error(f"Eroare SportAPI7 meciuri: {e}")
         return []
 
-@st.cache_data(ttl=timedelta(hours=6))
-def get_team_history(team_id, max_matches=20):
-    from pipeline import MeciIstoric
-    url = f"{BASE_URL}/fixtures"
+def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
+    """Preia ultimele meciuri jucate de o echipă folosind endpoint-ul de evenimente SportAPI7."""
+    # Folosește endpoint-ul de evenimente trecute ale echipei
+    url = f"{BASE_URL}/api/v1/team/{team_id}/events/last/{n_meciuri}"
     headers = get_headers()
-    current_year = datetime.now().year
-    
-    params = {
-        "team": team_id,
-        "season": current_year,
-        "status": "FT"
-    }
     
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=10)
-        response.raise_for_status()
+        response = requests.get(url, headers=headers, timeout=10)
         data = response.json()
         
-        if data.get("errors") or not data.get("response"):
-            params["season"] = current_year - 1
-            response = requests.get(url, headers=headers, params=params, timeout=10)
-            data = response.json()
-            
-        raw_fixtures = data.get("response", [])
-        if not raw_fixtures:
-            return []
-            
-        raw_fixtures.sort(key=lambda x: x.get("fixture", {}).get("date", ""))
-        last_fixtures = raw_fixtures[-max_matches:]
-        
         meciuri_pipeline = []
-        for f in last_fixtures:
-            full_date_str = f.get("fixture", {}).get("date", "")
-            
-            if "T" in full_date_str:
-                just_date_str = full_date_str.split("T")[0]
-            else:
-                just_date_str = full_date_str
-            
-            try:
-                m_date = datetime.strptime(just_date_str, "%Y-%m-%d").date()
-            except Exception:
-                m_date = datetime.today().date()
+        for event in data.get("events", []):
+            # Luăm doar meciurile încheiate (statusul trebuie să fie finalizat)
+            if event.get("status", {}).get("type") != "finished":
+                continue
                 
-            teams = f.get("teams", {})
-            goals = f.get("goals", {})
+            timestamp = event.get("startTimestamp")
+            m_date = datetime.fromtimestamp(timestamp).date() if timestamp else datetime.today().date()
+            
+            home_id = event.get("homeTeam", {}).get("id")
+            away_id = event.get("awayTeam", {}).get("id")
+            
+            home_goals = event.get("homeScore", {}).get("current", 0)
+            away_goals = event.get("awayScore", {}).get("current", 0)
             
             meciuri_pipeline.append(MeciIstoric(
                 data=m_date,
-                home_id=teams.get("home", {}).get("id"),
-                away_id=teams.get("away", {}).get("id"),
-                home_goals=goals.get("home", 0) if goals.get("home") is not None else 0,
-                away_goals=goals.get("away", 0) if goals.get("away") is not None else 0
+                home_id=home_id,
+                away_id=away_id,
+                home_goals=home_goals if home_goals is not None else 0,
+                away_goals=away_goals if away_goals is not None else 0
             ))
-            
         return meciuri_pipeline
     except Exception as e:
+        st.error(f"Eroare preluare istoric SportAPI7: {e}")
         return []
 
-@st.cache_data(ttl=timedelta(hours=6))
-def get_fixture_predictions(fixture_id):
-    url = f"{BASE_URL}/predictions"
+def predictie_oficiala(fixture_id: int) -> dict | None:
+    """Preia cotele evenimentului ca alternativă la predicții."""
+    url = f"{BASE_URL}/api/v1/event/{fixture_id}/odds/1/all"
     headers = get_headers()
-    params = {"fixture": fixture_id}
-    
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        res_list = data.get("response", [])
-        return res_list if res_list else None
+        response = requests.get(url, headers=headers, timeout=10)
+        return response.json()
     except Exception:
         return None
 
-meciuri_azi = get_fixtures_by_date
-istoric_echipa = get_team_history
-predictie_oficiala = get_fixture_predictions
+def predictii_bonus_rapidapi(params: dict | None = None) -> list[dict] | None:
+    return None
