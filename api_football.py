@@ -2,8 +2,8 @@ import requests
 import streamlit as st
 from datetime import datetime, timedelta
 
-# ADRESA GATEWAY-ULUI DE PRODUCȚIE RAPIDAPI PENTRU API-FOOTBALL
-BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
+# ADRESA COMPLETĂ ȘI CORECTĂ PENTRU RAPIDAPI
+BASE_URL = "https://rapidapi.com"
 
 def get_headers():
     """Prelucrează cheia API salvată în Streamlit Secrets pentru interfața RapidAPI."""
@@ -12,7 +12,7 @@ def get_headers():
         return {}
     return {
         "x-rapidapi-key": st.secrets["apisports_key"],
-        "x-rapidapi-host": "api-football-v1.p.rapidapi.com"  # Corectat (fără '://' în față)
+        "x-rapidapi-host": "://rapidapi.com"
     }
 
 @st.cache_data(ttl=timedelta(minutes=5))
@@ -147,7 +147,6 @@ def get_fixture_predictions(fixture_id):
     except Exception:
         return None
 
-# Definirea aliasurilor cerute de aplicația principală (app.py)
 meciuri_azi = get_fixtures_by_date
 istoric_echipa = get_team_history
 predictie_oficiala = get_fixture_predictions
