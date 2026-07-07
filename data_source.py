@@ -6,7 +6,6 @@ from pipeline import MeciIstoric
 
 # URL-ul oficial și complet pentru clienții înregistrați prin RapidAPI
 BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
-"x-rapidapi-host": "api-football-v1.p.rapidapi.com"
 
 def get_headers():
     """Header-ele necesare pentru RapidAPI."""
@@ -17,7 +16,6 @@ def get_headers():
         "x-rapidapi-key": st.secrets["apisports_key"],
         "x-rapidapi-host": "api-football-v1.p.rapidapi.com"
     }
-
 def meciuri_azi() -> list[dict]:
     """Preia meciurile de azi utilizând gateway-ul valid RapidAPI (FĂRĂ CACHE)."""
     date_str = datetime.now().strftime("%Y-%m-%d")
