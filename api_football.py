@@ -2,8 +2,8 @@ import requests
 import streamlit as st
 from datetime import datetime, timedelta
 
-# ADRESA COMPLETĂ ȘI CORECTĂ PENTRU RAPIDAPI
-BASE_URL = "https://rapidapi.com"
+# ADRESA CORECTĂ PENTRU API-FOOTBALL VIA RAPIDAPI
+BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
 
 def get_headers():
     """Prelucrează cheia API salvată în Streamlit Secrets pentru interfața RapidAPI."""
@@ -12,12 +12,11 @@ def get_headers():
         return {}
     return {
         "x-rapidapi-key": st.secrets["apisports_key"],
-        "x-rapidapi-host": "://rapidapi.com"
+        "x-rapidapi-host": "api-football-v1.p.rapidapi.com"
     }
 
 @st.cache_data(ttl=timedelta(minutes=5))
 def get_fixtures_by_date(date_str=None):
-    """Aduce meciurile zilei curent formatate pentru app.py."""
     if date_str is None:
         date_str = datetime.now().strftime("%Y-%m-%d")
         
@@ -36,7 +35,6 @@ def get_fixtures_by_date(date_str=None):
             
         raw_fixtures = data.get("response", [])
         
-        # Dacă e gol pe data curentă, cerem meciurile live ca metodă de rezervă
         if not raw_fixtures:
             params = {"live": "all"}
             response = requests.get(url, headers=headers, params=params, timeout=10)
@@ -44,7 +42,7 @@ def get_fixtures_by_date(date_str=None):
             raw_fixtures = data.get("response", [])
             
         if not raw_fixtures:
-            st.info(f"API-ul a răspuns cu succes, dar lista de meciuri transmise pentru data {date_str} este goală.")
+            st.info(f"API-ul a răspuns cu succes, dar lista de meciuri pentru data {date_str} este goală.")
             return []
             
         mapped_fixtures = []
@@ -74,7 +72,6 @@ def get_fixtures_by_date(date_str=None):
 
 @st.cache_data(ttl=timedelta(hours=6))
 def get_team_history(team_id, max_matches=20):
-    """Ultimele meciuri terminate convertite în obiecte MeciIstoric."""
     from pipeline import MeciIstoric
     url = f"{BASE_URL}/fixtures"
     headers = get_headers()
