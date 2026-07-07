@@ -9,12 +9,13 @@ BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
 "x-rapidapi-host": "api-football-v1.p.rapidapi.com"
 
 def get_headers():
+    """Header-ele necesare pentru RapidAPI."""
     if "apisports_key" not in st.secrets:
         st.error("Cheia 'apisports_key' lipsește din Streamlit Secrets!")
         return {}
     return {
         "x-rapidapi-key": st.secrets["apisports_key"],
-        "x-rapidapi-host": "://rapidapi.com"
+        "x-rapidapi-host": "api-football-v1.p.rapidapi.com"
     }
 
 def meciuri_azi() -> list[dict]:
