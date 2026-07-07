@@ -107,7 +107,7 @@ def istoric_echipa(team_id: int, n_meciuri: int = 20) -> list[MeciIstoric]:
 
     except Exception as e:
         st.error(f"Eroare la preluarea istoricului echipei: {e}")
-        return []
+        return 
 
 
 def predictie_oficiala(fixture_id: int) -> dict | None:
