@@ -1,28 +1,23 @@
-import requests
-import time
+from api_client import RapidAPIClient
 
-class RapidAPIClient:
-    BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
+class FootballAPI:
+    def __init__(self, api_key):
+        self.client = RapidAPIClient(api_key)
 
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.headers = {
-            "x-rapidapi-key": self.api_key,
-            "x-rapidapi-host": "api-football-v1.p.rapidapi.com"
-        }
+    def fixtures_by_date(self, date: str):
+        return self.client.get("fixtures", {"date": date})
 
-    def get(self, endpoint: str, params: dict = None):
-        url = f"{self.BASE_URL}/{endpoint}"
+    def fixtures_by_league(self, league_id: int, season: int):
+        return self.client.get("fixtures", {"league": league_id, "season": season})
 
-        try:
-            response = requests.get(url, headers=self.headers, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
+    def odds(self, fixture_id: int):
+        return self.client.get("odds", {"fixture": fixture_id})
 
-            if "errors" in data and data["errors"]:
-                return {"status": "error", "data": data["errors"]}
+    def predictions(self, fixture_id: int):
+        return self.client.get("predictions", {"fixture": fixture_id})
 
-            return {"status": "ok", "data": data.get("response", [])}
+    def standings(self, league_id: int, season: int):
+        return self.client.get("standings", {"league": league_id, "season": season})
 
-        except requests.exceptions.RequestException as e:
-            return {"status": "error", "data": str(e)}
+    def teams(self, league_id: int, season: int):
+        return self.client.get("teams", {"league": league_id, "season": season})
