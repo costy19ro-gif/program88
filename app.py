@@ -111,3 +111,37 @@ if uploaded:
 
     st.subheader("Bilet BOMBA")
     st.dataframe(generator_BOMBA(df))
+# ─────────────────────────────────────────────
+# 🔮 PREDICȚII LIVE DIN RAPIDAPI
+def get_live_predictions(league_id=39, season=2024):
+    headers = {"X-RapidAPI-Key": RAPIDAPI_KEY, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
+    url = "https://api-football-v1.p.rapidapi.com/v3/odds"
+    params = {"league": league_id, "season": season}
+    response = requests.get(url, headers=headers, params=params)
+    data = response.json()
+
+    matches = []
+    for item in data.get("response", []):
+        odds = item.get("bookmakers", [])[0].get("bets", [])
+        odds_dict = {}
+        for bet in odds:
+            for val in bet.get("values", []):
+                odds_dict[val["value"]] = float(val["odd"])
+
+        # probabilități simple (inverse cote normalizate)
+        total_inv = sum(1 / v for v in odds_dict.values() if v > 0)
+        probs = {k: (1 / v) / total_inv for k, v in odds_dict.items() if v > 0}
+
+        matches.append({
+            "match_id": item["fixture"]["id"],
+            "home_team": item["fixture"]["teams"]["home"]["name"],
+            "away_team": item["fixture"]["teams"]["away"]["name"],
+            "odd_1": odds_dict.get("Home", None),
+            "odd_X": odds_dict.get("Draw", None),
+            "odd_2": odds_dict.get("Away", None),
+            "prob_1": probs.get("Home", None),
+            "prob_X": probs.get("Draw", None),
+            "prob_2": probs.get("Away", None)
+        })
+
+    return pd.DataFrame(matches)
