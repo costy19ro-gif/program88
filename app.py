@@ -1,4 +1,7 @@
 import pandas as pd
+import streamlit as st
+st.set_page_config(page_title="BetMachine RapidAPI", layout="wide")
+st.write("✅ Streamlit a pornit corect")
 
 def add_value_columns(df: pd.DataFrame) -> pd.DataFrame:
     df["value_1"] = df["prob_1"] * df["odd_1"]
