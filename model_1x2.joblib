@@ -24,8 +24,8 @@ FEATURES = [
 X = df[FEATURES]
 y = df["target"]
 
-model = RandomForestClassifier(n_estimators=300)
+model = RandomForestClassifier(n_estimators=300, random_state=42)
 model.fit(X, y)
 
 joblib.dump(model, "model_1x2.joblib")
-print("Model salvat!")
+print("✅ Model salvat cu scikit-learn 1.5.1")
