@@ -194,3 +194,22 @@ if st.sidebar.button("🔮 Predicții Live AI"):
 
     st.subheader("🎯 Bilet BOMBA")
     st.dataframe(generator_BOMBA(df_live))
+try:
+    model_1x2 = joblib.load("model_1x2.joblib")
+except Exception as e:
+    st.warning(f"Modelul nu s-a putut încărca ({e}). Se antrenează automat...")
+    from sklearn.ensemble import RandomForestClassifier
+    import pandas as pd
+    df = pd.read_csv("scores24.csv")
+    df["target"] = df.apply(
+        lambda r: 0 if r["goals_home"] > r["goals_away"] else
+                  1 if r["goals_home"] == r["goals_away"] else
+                  2,
+        axis=1
+    )
+    X = df[FEATURES_1X2]
+    y = df["target"]
+    model_1x2 = RandomForestClassifier(n_estimators=300, random_state=42)
+    model_1x2.fit(X, y)
+    joblib.dump(model_1x2, "model_1x2.joblib")
+    st.success("Modelul AI 1X2 a fost reantrenat automat.")
