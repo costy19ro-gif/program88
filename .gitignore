@@ -1,5 +1,0 @@
-.streamlit/secrets.toml
-.cache_apifootball/
-.cache_miliardarul/
-__pycache__/
-*.pyc
