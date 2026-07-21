@@ -58,7 +58,36 @@ class RapidAPIClient:
 
         url = f"{BASE_URL}/{endpoint}"
         resp = requests.get(url, headers=self.headers, params=params or {}, timeout=15)
-        resp.raise_for_status()
+
+        # Prindem eroarea HTTP noi insine si aratam cauza reala (fara cheie),
+        # in loc sa lasam exceptia bruta sa urce pana la Streamlit — care
+        # redacteaza mesajul original ("This app has encountered an error...")
+        # si nu mai vezi de fapt DE CE a picat cererea.
+        if resp.status_code == 401:
+            raise RuntimeError(
+                "RapidAPI a raspuns 401 Unauthorized — cheia RAPIDAPI_KEY este "
+                "gresita sau nu e trimisa corect. Verifica in Settings -> Secrets."
+            )
+        if resp.status_code == 403:
+            raise RuntimeError(
+                "RapidAPI a raspuns 403 Forbidden — cel mai probabil cheia ta nu "
+                "e abonata la API-ul 'API-Football' de pe RapidAPI (fiecare API "
+                "necesita abonare separata, chiar daca e gratuit). Verifica pe "
+                "rapidapi.com, la pagina API-Football, butonul 'Subscribe'."
+            )
+        if resp.status_code == 429:
+            raise RuntimeError(
+                "RapidAPI a raspuns 429 Too Many Requests — ai depasit cota "
+                "zilnica/lunara de pe planul curent. Asteapta resetarea sau "
+                "verifica planul din dashboard-ul RapidAPI."
+            )
+        if not resp.ok:
+            # orice alt cod neasteptat — aratam corpul raspunsului (scurtat),
+            # care de obicei contine motivul exact
+            raise RuntimeError(
+                f"RapidAPI a raspuns cu eroare HTTP {resp.status_code}: {resp.text[:300]}"
+            )
+
         data = resp.json()
 
         # API-Football raspunde cu HTTP 200 chiar si cand ai depasit cota
