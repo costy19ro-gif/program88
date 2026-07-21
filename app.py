@@ -1,22 +1,29 @@
 import streamlit as st
 import pandas as pd
 import requests
+import joblib
 
 # ─────────────────────────────────────────────
-# 🔑 CONFIGURARE PAGINĂ
+# 🔧 CONFIGURARE PAGINĂ
 st.set_page_config(page_title="BetMachine RapidAPI", layout="wide")
 st.title("⚽ BetMachine RapidAPI – AI Predictions")
 
 # ─────────────────────────────────────────────
-# 🔧 FUNCȚII RAPIDAPI
-RAPIDAPI_KEY = "xxxxxxxx"  # înlocuiește cu cheia ta RapidAPI
-BASE_URL = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
+# 🔑 RAPIDAPI CONFIG
+RAPIDAPI_KEY = "INTRODU_CHEIA_TA_AICI"
+HEADERS = {
+    "X-RapidAPI-Key": RAPIDAPI_KEY,
+    "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"
+}
 
+# ─────────────────────────────────────────────
+# 📡 FUNCȚIE FIXTURES
 def get_fixtures(league_id=39, season=2024):
-    headers = {"X-RapidAPI-Key": RAPIDAPI_KEY, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
+    url = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
     params = {"league": league_id, "season": season}
-    response = requests.get(BASE_URL, headers=headers, params=params)
-    data = response.json()
+    r = requests.get(url, headers=HEADERS, params=params)
+    data = r.json()
+
     fixtures = []
     for item in data.get("response", []):
         fixtures.append({
@@ -29,62 +36,103 @@ def get_fixtures(league_id=39, season=2024):
     return pd.DataFrame(fixtures)
 
 # ─────────────────────────────────────────────
-# 🧠 FUNCȚII AI GENERATOARE
-def add_value_columns(df: pd.DataFrame) -> pd.DataFrame:
+# 🔮 FUNCȚIE ODDS + PROBABILITĂȚI LIVE
+def get_live_predictions(league_id=39, season=2024):
+    url = "https://api-football-v1.p.rapidapi.com/v3/odds"
+    params = {"league": league_id, "season": season}
+    r = requests.get(url, headers=HEADERS, params=params)
+    data = r.json()
+
+    matches = []
+    for item in data.get("response", []):
+        try:
+            odds = item["bookmakers"][0]["bets"][0]["values"]
+        except:
+            continue
+
+        odd_1 = float(odds[0]["odd"])
+        odd_X = float(odds[1]["odd"])
+        odd_2 = float(odds[2]["odd"])
+
+        inv = (1/odd_1 + 1/odd_X + 1/odd_2)
+        prob_1 = (1/odd_1) / inv
+        prob_X = (1/odd_X) / inv
+        prob_2 = (1/odd_2) / inv
+
+        matches.append({
+            "match_id": item["fixture"]["id"],
+            "home_team": item["fixture"]["teams"]["home"]["name"],
+            "away_team": item["fixture"]["teams"]["away"]["name"],
+            "odd_1": odd_1,
+            "odd_X": odd_X,
+            "odd_2": odd_2,
+            "prob_1": prob_1,
+            "prob_X": prob_X,
+            "prob_2": prob_2
+        })
+
+    return pd.DataFrame(matches)
+
+# ─────────────────────────────────────────────
+# 🤖 MODEL AI 1X2
+FEATURES_1X2 = [
+    "shots_home", "shots_away",
+    "shots_on_target_home", "shots_on_target_away",
+    "xG_home", "xG_away",
+    "corners_home", "corners_away",
+    "form_home", "form_away",
+    "league_strength"
+]
+
+model_1x2 = joblib.load("model_1x2.joblib")
+
+def predict_1x2(row):
+    X = row[FEATURES_1X2].values.reshape(1, -1)
+    pred = model_1x2.predict(X)[0]
+    proba = model_1x2.predict_proba(X)[0]
+    return pred, proba
+
+# ─────────────────────────────────────────────
+# 🧮 FUNCȚII GENERATOARE AI
+def add_value_columns(df):
     df["value_1"] = df["prob_1"] * df["odd_1"]
     df["value_X"] = df["prob_X"] * df["odd_X"]
     df["value_2"] = df["prob_2"] * df["odd_2"]
-    df["value_over"] = df["prob_over"] * df["odd_over"]
-    df["value_under"] = df["prob_under"] * df["odd_under"]
-    df["value_gg"] = df["prob_gg"] * df["odd_gg"]
-    df["value_ng"] = df["prob_ng"] * df["odd_ng"]
     return df
 
 def generator_SIGUR(df, min_prob=0.75, max_odd=1.70, max_matches=6):
     tickets = []
-    for _, row in df.iterrows():
-        if row["prob_1"] >= min_prob and row["odd_1"] <= max_odd:
-            tickets.append({"match_id": row["match_id"], "tip": "1", "prob": row["prob_1"], "odd": row["odd_1"]})
-        elif row["prob_2"] >= min_prob and row["odd_2"] <= max_odd:
-            tickets.append({"match_id": row["match_id"], "tip": "2", "prob": row["prob_2"], "odd": row["odd_2"]})
-        elif row["prob_over"] >= min_prob and row["odd_over"] <= max_odd:
-            tickets.append({"match_id": row["match_id"], "tip": "Over 2.5", "prob": row["prob_over"], "odd": row["odd_over"]})
-        elif row["prob_gg"] >= min_prob and row["odd_gg"] <= max_odd:
-            tickets.append({"match_id": row["match_id"], "tip": "GG", "prob": row["prob_gg"], "odd": row["odd_gg"]})
+    for _, r in df.iterrows():
+        if r["prob_1"] >= min_prob and r["odd_1"] <= max_odd:
+            tickets.append({"match_id": r["match_id"], "tip": "1", "prob": r["prob_1"], "odd": r["odd_1"]})
+        elif r["prob_2"] >= min_prob and r["odd_2"] <= max_odd:
+            tickets.append({"match_id": r["match_id"], "tip": "2", "prob": r["prob_2"], "odd": r["odd_2"]})
     return pd.DataFrame(sorted(tickets, key=lambda x: x["prob"], reverse=True)[:max_matches])
 
 def generator_COMBO(df, min_prob=0.60, min_odd=1.70, max_odd=2.20, max_matches=10):
     tickets = []
-    for _, row in df.iterrows():
+    for _, r in df.iterrows():
         candidates = []
-        if row["prob_1"] >= min_prob and min_odd <= row["odd_1"] <= max_odd:
-            candidates.append(("1", row["prob_1"], row["odd_1"]))
-        if row["prob_2"] >= min_prob and min_odd <= row["odd_2"] <= max_odd:
-            candidates.append(("2", row["prob_2"], row["odd_2"]))
-        if row["prob_over"] >= min_prob and min_odd <= row["odd_over"] <= max_odd:
-            candidates.append(("Over 2.5", row["prob_over"], row["odd_over"]))
-        if row["prob_gg"] >= min_prob and min_odd <= row["odd_gg"] <= max_odd:
-            candidates.append(("GG", row["prob_gg"], row["odd_gg"]))
+        if r["prob_1"] >= min_prob and min_odd <= r["odd_1"] <= max_odd:
+            candidates.append(("1", r["prob_1"], r["odd_1"]))
+        if r["prob_2"] >= min_prob and min_odd <= r["odd_2"] <= max_odd:
+            candidates.append(("2", r["prob_2"], r["odd_2"]))
         if candidates:
             tip, prob, odd = max(candidates, key=lambda x: x[1])
-            tickets.append({"match_id": row["match_id"], "tip": tip, "prob": prob, "odd": odd})
+            tickets.append({"match_id": r["match_id"], "tip": tip, "prob": prob, "odd": odd})
     return pd.DataFrame(sorted(tickets, key=lambda x: x["prob"], reverse=True)[:max_matches])
 
 def generator_BOMBA(df, min_prob=0.50, min_odd=2.20, max_matches=15):
     tickets = []
-    for _, row in df.iterrows():
+    for _, r in df.iterrows():
         candidates = []
-        if row["prob_1"] >= min_prob and row["odd_1"] >= min_odd:
-            candidates.append(("1", row["prob_1"], row["odd_1"], row["value_1"]))
-        if row["prob_2"] >= min_prob and row["odd_2"] >= min_odd:
-            candidates.append(("2", row["prob_2"], row["odd_2"], row["value_2"]))
-        if row["prob_over"] >= min_prob and row["odd_over"] >= min_odd:
-            candidates.append(("Over 2.5", row["prob_over"], row["odd_over"], row["value_over"]))
-        if row["prob_gg"] >= min_prob and row["odd_gg"] >= min_odd:
-            candidates.append(("GG", row["prob_gg"], row["odd_gg"], row["value_gg"]))
+        if r["prob_1"] >= min_prob and r["odd_1"] >= min_odd:
+            candidates.append(("1", r["prob_1"], r["odd_1"], r["value_1"]))
+        if r["prob_2"] >= min_prob and r["odd_2"] >= min_odd:
+            candidates.append(("2", r["prob_2"], r["odd_2"], r["value_2"]))
         if candidates:
             tip, prob, odd, value = max(candidates, key=lambda x: x[3])
-            tickets.append({"match_id": row["match_id"], "tip": tip, "prob": prob, "odd": odd, "value": value})
+            tickets.append({"match_id": r["match_id"], "tip": tip, "prob": prob, "odd": odd, "value": value})
     return pd.DataFrame(sorted(tickets, key=lambda x: x["value"], reverse=True)[:max_matches])
 
 # ─────────────────────────────────────────────
@@ -92,56 +140,57 @@ def generator_BOMBA(df, min_prob=0.50, min_odd=2.20, max_matches=15):
 st.sidebar.header("⚙️ Setări")
 league_id = st.sidebar.number_input("League ID", value=39)
 season = st.sidebar.number_input("Season", value=2024)
-if st.sidebar.button("🔄 Actualizează meciuri"):
+
+# FIXTURES
+if st.sidebar.button("📅 Afișează meciuri"):
     fixtures = get_fixtures(league_id, season)
-    st.success(f"{len(fixtures)} meciuri găsite")
+    st.subheader("📅 Meciuri")
     st.dataframe(fixtures)
 
-uploaded = st.file_uploader("📂 Încarcă fișier cu probabilități + cote (CSV)")
-if uploaded:
-    df = pd.read_csv(uploaded)
-    df = add_value_columns(df)
+# PREDICȚII LIVE
+if st.sidebar.button("🔮 Predicții Live AI"):
+    df_live = get_live_predictions(league_id, season)
 
-    st.header("🎯 Generatoare AI")
-    st.subheader("Bilet SIGUR")
-    st.dataframe(generator_SIGUR(df))
+    # completăm cu statistici default pentru model
+    df_live["shots_home"] = 5
+    df_live["shots_away"] = 5
+    df_live["shots_on_target_home"] = 3
+    df_live["shots_on_target_away"] = 3
+    df_live["xG_home"] = 1.2
+    df_live["xG_away"] = 0.9
+    df_live["corners_home"] = 4
+    df_live["corners_away"] = 4
+    df_live["form_home"] = 3
+    df_live["form_away"] = 2
+    df_live["league_strength"] = 1
 
-    st.subheader("Bilet COMBO")
-    st.dataframe(generator_COMBO(df))
-
-    st.subheader("Bilet BOMBA")
-    st.dataframe(generator_BOMBA(df))
-# ─────────────────────────────────────────────
-# 🔮 PREDICȚII LIVE DIN RAPIDAPI
-def get_live_predictions(league_id=39, season=2024):
-    headers = {"X-RapidAPI-Key": RAPIDAPI_KEY, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
-    url = "https://api-football-v1.p.rapidapi.com/v3/odds"
-    params = {"league": league_id, "season": season}
-    response = requests.get(url, headers=headers, params=params)
-    data = response.json()
-
-    matches = []
-    for item in data.get("response", []):
-        odds = item.get("bookmakers", [])[0].get("bets", [])
-        odds_dict = {}
-        for bet in odds:
-            for val in bet.get("values", []):
-                odds_dict[val["value"]] = float(val["odd"])
-
-        # probabilități simple (inverse cote normalizate)
-        total_inv = sum(1 / v for v in odds_dict.values() if v > 0)
-        probs = {k: (1 / v) / total_inv for k, v in odds_dict.items() if v > 0}
-
-        matches.append({
-            "match_id": item["fixture"]["id"],
-            "home_team": item["fixture"]["teams"]["home"]["name"],
-            "away_team": item["fixture"]["teams"]["away"]["name"],
-            "odd_1": odds_dict.get("Home", None),
-            "odd_X": odds_dict.get("Draw", None),
-            "odd_2": odds_dict.get("Away", None),
-            "prob_1": probs.get("Home", None),
-            "prob_X": probs.get("Draw", None),
-            "prob_2": probs.get("Away", None)
+    preds = []
+    for _, row in df_live.iterrows():
+        pred, proba = predict_1x2(row)
+        preds.append({
+            "match_id": row["match_id"],
+            "home_team": row["home_team"],
+            "away_team": row["away_team"],
+            "pred_1x2": ["1", "X", "2"][pred],
+            "prob_1": proba[0],
+            "prob_X": proba[1],
+            "prob_2": proba[2],
+            "odd_1": row["odd_1"],
+            "odd_X": row["odd_X"],
+            "odd_2": row["odd_2"]
         })
 
-    return pd.DataFrame(matches)
+    df_live = pd.DataFrame(preds)
+    df_live = add_value_columns(df_live)
+
+    st.subheader("🔮 Predicții AI 1X2")
+    st.dataframe(df_live)
+
+    st.subheader("🎯 Bilet SIGUR")
+    st.dataframe(generator_SIGUR(df_live))
+
+    st.subheader("🎯 Bilet COMBO")
+    st.dataframe(generator_COMBO(df_live))
+
+    st.subheader("🎯 Bilet BOMBA")
+    st.dataframe(generator_BOMBA(df_live))
