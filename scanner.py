@@ -1,27 +1,38 @@
 """
 Scanner automat de bilete.
 
-Cauta meciuri viitoare din DOUA surse — RapidAPI ('Free API Live Football
-Data', ligi mici/mijlocii + Liga I) si football-data.org (~13 ligi mari,
-dar cu status=SCHEDULED corect, fara problema de sezon vechi) — ruleaza
-motorul Poisson/Dixon-Coles (pipeline.py) pe fiecare, si construieste
-automat categoriile de bilet, dupa regulile lui Julien.
+Cauta meciuri viitoare din DOUA surse:
+  - RapidAPI ('Free API Live Football Data') — scanat pe INTERVAL DE DATE,
+    nu pe liga. De ce: endpoint-ul pe liga (football-get-all-matches-by-league)
+    are gauri reale de acoperire (verificat — Norvegia/Suedia intorc liste
+    goale acolo, desi au meciuri reale). Endpoint-ul pe data
+    (football-get-matches-by-date-and-league) e complet — grupeaza automat
+    toate ligile active intr-o zi, deci nu mai trebuie sa alegem ligi deloc.
+    Bonus: istoricul unei echipe acum include si meciurile din alte
+    competitii (cupe etc.), nu doar liga principala.
+
+  - football-data.org (~13 ligi mari, status=SCHEDULED corect, fara
+    problema de sezon vechi) — ramane pe competitii alese explicit, pentru
+    ca API-ul e organizat asa (nu are un echivalent "toate ligile pe data").
+
+Ruleaza motorul Poisson/Dixon-Coles (pipeline.py) pe fiecare candidat, si
+construieste automat categoriile de bilet, dupa regulile lui Julien.
 
 LIMITARI reale — de stiut inainte sa te bazezi pe rezultat:
 
-1. Forma fiecarei echipe se calculeaza DOAR din meciurile aceleiasi
-   competitii/sezon (indiferent de sursa). Nu avem acces la meciuri din
-   cupe/alte competitii ale aceleiasi echipe — pentru echipe care joaca
-   des si in alte competitii, forma calculata aici poate fi incompleta.
+1. Prima repriza NU e folosita (desi football-data.org o are in raspuns) —
+   categoria a fost scoasa complet din bilet.
 
-2. Prima repriza NU e disponibila (desi football-data.org o are in raspuns,
-   n-o folosim inca) — categoria a fost scoasa complet din bilet.
-
-3. "Data" meciurilor viitoare vine doar ca zi (fara ora exacta afisata) —
+2. "Data" meciurilor viitoare vine doar ca zi (fara ora exacta afisata) —
    verifica ora reala pe surse oficiale inainte sa pariezi.
 
-4. Cele doua surse au sisteme de ID-uri de echipa COMPLET separate — nu se
+3. Cele doua surse au sisteme de ID-uri de echipa COMPLET separate — nu se
    amesteca niciodata (football-data.org e prefixat "fd:").
+
+4. Scanarea RapidAPI pe interval costa un apel per zi (istoric + viitor),
+   cache 6h. Cu implicit 45 zile istoric + 7 zile viitor = ~52 apeluri —
+   verifica sa nu depasesti cota zilnica gratuita (100/zi) daca mai faci
+   si alte scanari in aceeasi zi.
 """
 
 from __future__ import annotations
@@ -44,18 +55,19 @@ class SelectieBilet:
     cota: float
 
 
-def _candidati_din_liga_rapidapi(league_id: int, zile_inainte: int, min_istoric: int = 5) -> list[dict]:
-    """Meciurile viitoare dintr-o liga RapidAPI ('Free API Live Football Data'), cu piete calculate."""
-    meciuri = data_source.meciuri_liga(league_id)
-
+def _candidati_rapidapi_interval(
+    zile_inainte: int, zile_istoric: int = 45, min_istoric: int = 5,
+) -> list[dict]:
+    """Toate meciurile viitoare din RapidAPI, indiferent de liga — scanate
+    pe interval de date (vezi docstring-ul modulului pentru motiv)."""
     azi = date.today()
-    prag = azi + timedelta(days=zile_inainte)
+    meciuri = data_source.meciuri_interval(
+        azi - timedelta(days=zile_istoric), azi + timedelta(days=zile_inainte)
+    )
 
     candidati = []
     for m in meciuri:
-        if m["terminat"] or m["data"] is None:
-            continue
-        if not (azi <= m["data"] <= prag):
+        if m["terminat"] or m["data"] is None or m["data"] <= azi:
             continue
 
         istoric_gazda = data_source.istoric_echipa_din_liga(meciuri, m["echipa_gazda_id"], 20)
@@ -104,57 +116,61 @@ def _candidati_din_competitie_fd(cod: str, zile_inainte: int, min_istoric: int =
     return candidati
 
 
-def verifica_ligi_active(surse: list[tuple], zile_inainte: int = 3) -> list[dict]:
-    """
-    Verificare rapida: pentru fiecare sursa, cate meciuri viitoare (neterminate)
-    are in urmatoarele `zile_inainte` zile — FARA sa ruleze motorul Poisson
-    (mult mai rapid decat scaneaza()). Acelasi format de tuplu ca la scaneaza().
-    """
+def verifica_surse_fd(coduri: list[str], zile_inainte: int = 7) -> list[dict]:
+    """Verificare rapida (fara motor Poisson) pentru competitiile
+    football-data.org alese — cate meciuri viitoare are fiecare."""
     azi = date.today()
     prag = azi + timedelta(days=zile_inainte)
 
     rezultate = []
-    for tip, ident in surse:
+    for cod in coduri:
         try:
-            if tip == "rapidapi":
-                meciuri = data_source.meciuri_liga(ident)
-            elif tip == "football_data":
-                meciuri = fdo.meciuri_competitie_toate(ident)
-            else:
-                continue
+            meciuri = fdo.meciuri_competitie_toate(cod)
         except RuntimeError as e:
-            rezultate.append({"tip": tip, "id": ident, "meciuri_viitoare": None, "eroare": str(e)})
+            rezultate.append({"cod": cod, "meciuri_viitoare": None, "eroare": str(e)})
             continue
-
         nr = sum(
             1 for m in meciuri
             if not m["terminat"] and m["data"] is not None and azi <= m["data"] <= prag
         )
-        rezultate.append({"tip": tip, "id": ident, "meciuri_viitoare": nr, "eroare": None})
+        rezultate.append({"cod": cod, "meciuri_viitoare": nr, "eroare": None})
     return rezultate
 
 
+def verifica_rapidapi(zile_inainte: int = 7) -> dict:
+    """Verificare rapida (fara motor Poisson) — cate meciuri viitoare
+    gaseste RapidAPI in total, pe toate ligile, in intervalul dat."""
+    azi = date.today()
+    try:
+        meciuri = data_source.meciuri_interval(azi, azi + timedelta(days=zile_inainte))
+    except RuntimeError as e:
+        return {"meciuri_viitoare": None, "eroare": str(e)}
+    nr = sum(1 for m in meciuri if not m["terminat"] and m["data"] and m["data"] > azi)
+    return {"meciuri_viitoare": nr, "eroare": None}
+
+
 def scaneaza(
-    surse: list[tuple], zile_inainte: int = 3, min_istoric: int = 5,
+    surse_fd: list[str], scaneaza_rapidapi: bool = True,
+    zile_inainte: int = 7, zile_istoric_rapidapi: int = 45, min_istoric: int = 5,
     progres_callback=None,
 ) -> list[dict]:
     """
-    Scaneaza toate sursele date, intoarce lista de candidati (meci + piete).
+    Scaneaza sursele alese, intoarce lista de candidati (meci + piete).
 
-    `surse` e o lista de tupluri (tip_sursa, identificator):
-      ("rapidapi", league_id)   -- ID numeric, din api_football/RapidAPI
-      ("football_data", cod)    -- cod scurt, din football_data_org.py (ex. "PL")
-
-    O sursa care esueaza (fara meciuri viitoare, eroare API, cota depasita
-    etc.) nu opreste scanarea celorlalte.
+    `surse_fd`: lista de coduri football-data.org (ex. ["PL", "PD"]).
+    `scaneaza_rapidapi`: daca True, scaneaza si RapidAPI (pe interval de
+    date, toate ligile — nu mai e nevoie sa alegi ligi manual).
     """
+    pasi = ([("rapidapi", None)] if scaneaza_rapidapi else []) + \
+           [("football_data", cod) for cod in surse_fd]
+
     toti = []
-    for i, (tip, ident) in enumerate(surse):
+    for i, (tip, ident) in enumerate(pasi):
         if progres_callback:
-            progres_callback(i, len(surse), f"{tip}:{ident}")
+            progres_callback(i, len(pasi), "RapidAPI (toate ligile)" if tip == "rapidapi" else ident)
         try:
             if tip == "rapidapi":
-                toti.extend(_candidati_din_liga_rapidapi(ident, zile_inainte, min_istoric))
+                toti.extend(_candidati_rapidapi_interval(zile_inainte, zile_istoric_rapidapi, min_istoric))
             elif tip == "football_data":
                 toti.extend(_candidati_din_competitie_fd(ident, zile_inainte, min_istoric))
         except RuntimeError:
